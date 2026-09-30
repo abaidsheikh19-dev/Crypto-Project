@@ -1,11 +1,17 @@
 {
   "root": true,
-  "extends": ["next/core-web-vitals", "plugin:@typescript-eslint/recommended"],
-  "parser": "@typescript-eslint/parser",
-  "plugins": ["@typescript-eslint"],
+  "extends": ["next/core-web-vitals", "next/typescript"],
   "rules": {
-    "@typescript-eslint/no-unused-vars": "error",
-    "@typescript-eslint/consistent-type-imports": "error",
-    "no-console": ["warn", { "allow": ["error", "warn", "info"] }]
-  }
+    "no-restricted-properties": [
+      "error",
+      { "property": "$queryRawUnsafe", "message": "Use the tagged-template $queryRaw so values are always parameterised." },
+      { "property": "$executeRawUnsafe", "message": "Use the tagged-template $executeRaw so values are always parameterised." }
+    ],
+    "no-restricted-syntax": [
+      "error",
+      { "selector": "JSXAttribute[name.name='dangerouslySetInnerHTML']", "message": "Render text through React; never inject raw HTML." }
+    ],
+    "@typescript-eslint/no-unused-vars": ["error", { "argsIgnorePattern": "^_" }]
+  },
+  "ignorePatterns": ["node_modules", ".next", "coverage", "playwright-report", "test-results"]
 }

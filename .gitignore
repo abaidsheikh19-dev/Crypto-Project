@@ -10,3 +10,8 @@ dist
 .DS_Store
 /tmp
 /docker-data
+.local-db
+tsconfig.tsbuildinfo
+/test-results
+/playwright-report
+.env.test

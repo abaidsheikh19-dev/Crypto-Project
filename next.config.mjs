@@ -2,17 +2,12 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  images: {
-    remotePatterns: [
-      {
-        protocol: 'https',
-        hostname: 'images.unsplash.com',
-      },
-    ],
-  },
+  // Native / server-only packages stay out of the bundle.
+  serverExternalPackages: ['@node-rs/argon2', '@prisma/client', 'embedded-postgres'],
   experimental: {
     serverActions: {
-      bodySizeLimit: '2mb',
+      // Forms are small; keep request bodies tight.
+      bodySizeLimit: '100kb',
     },
   },
 };

@@ -1,149 +1,89 @@
+// Database schema. Money is always integer US cents. Every `*Enc` column holds
+// AES-256-GCM ciphertext produced by src/lib/crypto.ts; every `*Hash` column
+// holds a hash of a random token, never the token itself.
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+enum PromotionType {
+  PERCENT
+  FIXED_PRICE
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+enum OrderStatus {
+  pending_payment
+  payment_detected
+  paid
+  processing
+  shipped
+  cancelled
+  refunded
+}
+
+enum AdminRole {
+  OWNER
+  STAFF
+}
+
+enum SubjectType {
+  ADMIN
+  CUSTOMER
+}
+
+enum EmailStatus {
+  QUEUED
+  SENT
+  CAPTURED
+  FAILED
 }
 
 model Product {
-  id                  Int      @id @default(autoincrement())
-  slug                String   @unique
-  sku                 String   @unique
-  name                String
-  description         String
-  priceCents          Int      @map("price_cents")
-  stockQty            Int      @default(0) @map("stock_qty")
-  lowStockThreshold   Int      @default(5) @map("low_stock_threshold")
-  isActive            Boolean  @default(true) @map("is_active")
-  isRestricted        Boolean  @default(false) @map("is_restricted")
-  sortOrder           Int      @default(0) @map("sort_order")
-  createdAt           DateTime @default(now()) @map("created_at")
-  updatedAt           DateTime @updatedAt @map("updated_at")
-  productImages       ProductImage[]
-  cartItems           CartItem[]
-  orderItems          OrderItem[]
-  promotions          Promotion[]
-  stockAdjustments    StockAdjustment[]
+  id                Int                @id @default(autoincrement())
+  slug              String             @unique
+  sku               String             @unique
+  name              String
+  description       String
+  priceCents        Int                @map("price_cents")
+  stockQty          Int                @default(0) @map("stock_qty")
+  lowStockThreshold Int                @default(3) @map("low_stock_threshold")
+  isActive          Boolean            @default(true) @map("is_active")
+  // Dormant: stored and editable in admin, no storefront behaviour yet.
+  isRestricted      Boolean            @default(false) @map("is_restricted")
+  sortOrder         Int                @default(0) @map("sort_order")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  images            ProductImage[]
+  cartItems         CartItem[]
+  orderItems        OrderItem[]
+  promotions        Promotion[]
+  stockAdjustments  StockAdjustment[]
+  reservations      StockReservation[]
 
   @@map("products")
 }
 
 model ProductImage {
-  id         Int      @id @default(autoincrement())
-  productId  Int      @map("product_id")
-  fileKey    String   @map("file_key")
-  altText    String?  @map("alt_text")
-  sortOrder  Int      @default(0) @map("sort_order")
-  product    Product  @relation(fields: [productId], references: [id])
+  id        Int     @id @default(autoincrement())
+  productId Int     @map("product_id")
+  fileKey   String  @map("file_key")
+  altText   String  @default("") @map("alt_text")
+  sortOrder Int     @default(0) @map("sort_order")
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 
+  @@index([productId])
   @@map("product_images")
-}
-
-model Promotion {
-  id         Int      @id @default(autoincrement())
-  productId  Int      @map("product_id")
-  type       String
-  value      Int
-  startsAt   DateTime? @map("starts_at")
-  endsAt     DateTime? @map("ends_at")
-  isActive   Boolean  @default(true) @map("is_active")
-  product    Product  @relation(fields: [productId], references: [id])
-
-  @@map("promotions")
-}
-
-model DiscountCode {
-  id             Int       @id @default(autoincrement())
-  codeNormalized String    @unique @map("code_normalized")
-  type           String
-  value          Int
-  minOrderCents  Int?      @map("min_order_cents")
-  maxUses        Int?      @map("max_uses")
-  usedCount      Int       @default(0) @map("used_count")
-  expiresAt      DateTime? @map("expires_at")
-  isActive       Boolean   @default(true) @map("is_active")
-  orders         Order[]
-
-  @@map("discount_codes")
-}
-
-model Cart {
-  id           Int        @id @default(autoincrement())
-  tokenHash    String     @unique @map("token_hash")
-  customerId   Int?       @map("customer_id")
-  discountCodeId Int?     @map("discount_code_id")
-  expiresAt    DateTime   @map("expires_at")
-  items        CartItem[]
-
-  @@map("carts")
-}
-
-model CartItem {
-  id         Int     @id @default(autoincrement())
-  cartId     Int     @map("cart_id")
-  productId  Int     @map("product_id")
-  qty        Int
-  cart       Cart    @relation(fields: [cartId], references: [id])
-  product    Product @relation(fields: [productId], references: [id])
-
-  @@map("cart_items")
-}
-
-model Customer {
-  id           Int      @id @default(autoincrement())
-  emailEnc     String   @map("email_enc")
-  emailHmac    String   @unique @map("email_hmac")
-  passwordHash String   @map("password_hash")
-  nameEnc      String?  @map("name_enc")
-  lastActiveAt DateTime? @map("last_active_at")
-  createdAt    DateTime @default(now()) @map("created_at")
-
-  @@map("customers")
-}
-
-model Order {
-  id                Int          @id @default(autoincrement())
-  publicTokenHash   String       @unique @map("public_token_hash")
-  customerId        Int?         @map("customer_id")
-  status            String
-  subtotalCents     Int          @map("subtotal_cents")
-  discountCents     Int          @map("discount_cents")
-  shippingCents     Int          @map("shipping_cents")
-  totalCents        Int          @map("total_cents")
-  discountCodeId    Int?         @map("discount_code_id")
-  emailEnc          String?      @map("email_enc")
-  nameEnc           String?      @map("name_enc")
-  addressLine1Enc   String?      @map("address_line1_enc")
-  addressLine2Enc   String?      @map("address_line2_enc")
-  cityEnc           String?      @map("city_enc")
-  regionEnc         String?      @map("region_enc")
-  postcodeEnc       String?      @map("postcode_enc")
-  countryEnc        String?      @map("country_enc")
-  piiPurgedAt       DateTime?    @map("pii_purged_at")
-  trackingNumber    String?      @map("tracking_number")
-  btcpayInvoiceId   String?      @map("btcpay_invoice_id")
-  paidAt            DateTime?    @map("paid_at")
-  shippedAt         DateTime?    @map("shipped_at")
-  createdAt         DateTime     @default(now()) @map("created_at")
-  items             OrderItem[]
-  discountCode      DiscountCode? @relation(fields: [discountCodeId], references: [id])
-
-  @@map("orders")
-}
-
-model OrderItem {
-  id            Int     @id @default(autoincrement())
-  orderId       Int     @map("order_id")
-  productId     Int?    @map("product_id")
-  productNameSnapshot String @map("product_name_snapshot")
-  unitPriceCents Int     @map("unit_price_cents")
-  qty           Int
-  order         Order   @relation(fields: [orderId], references: [id])
-  product       Product? @relation(fields: [productId], references: [id])
-
-  @@map("order_items")
 }
 
 model StockAdjustment {
@@ -153,18 +93,139 @@ model StockAdjustment {
   reason      String
   adminUserId Int?     @map("admin_user_id")
   createdAt   DateTime @default(now()) @map("created_at")
-  product     Product  @relation(fields: [productId], references: [id])
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
+  @@index([productId, createdAt])
   @@map("stock_adjustments")
 }
 
-model StockReservation {
-  id         Int      @id @default(autoincrement())
-  orderId    Int      @map("order_id")
-  productId  Int      @map("product_id")
-  qty        Int
-  expiresAt  DateTime @map("expires_at")
+model Promotion {
+  id        Int           @id @default(autoincrement())
+  productId Int           @map("product_id")
+  type      PromotionType
+  // PERCENT: whole percent off (1-99). FIXED_PRICE: sale unit price in cents.
+  value     Int
+  startsAt  DateTime?     @map("starts_at")
+  endsAt    DateTime?     @map("ends_at")
+  isActive  Boolean       @default(true) @map("is_active")
+  createdAt DateTime      @default(now()) @map("created_at")
+  product   Product       @relation(fields: [productId], references: [id], onDelete: Cascade)
 
+  @@index([productId])
+  @@map("promotions")
+}
+
+model DiscountCode {
+  id             Int          @id @default(autoincrement())
+  codeNormalized String       @unique @map("code_normalized")
+  type           DiscountType
+  // PERCENT: whole percent (1-100). FIXED: cents off.
+  value          Int
+  minOrderCents  Int          @default(0) @map("min_order_cents")
+  maxUses        Int?         @map("max_uses")
+  usedCount      Int          @default(0) @map("used_count")
+  expiresAt      DateTime?    @map("expires_at")
+  isActive       Boolean      @default(true) @map("is_active")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  carts          Cart[]
+  orders         Order[]
+
+  @@map("discount_codes")
+}
+
+model Cart {
+  id             Int           @id @default(autoincrement())
+  tokenHash      String        @unique @map("token_hash")
+  discountCodeId Int?          @map("discount_code_id")
+  // Encrypted JSON of the checkout form between "details" and "review".
+  checkoutDraftEnc String?     @map("checkout_draft_enc")
+  expiresAt      DateTime      @map("expires_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+  items          CartItem[]
+  discountCode   DiscountCode? @relation(fields: [discountCodeId], references: [id], onDelete: SetNull)
+
+  @@index([expiresAt])
+  @@map("carts")
+}
+
+model CartItem {
+  id        Int     @id @default(autoincrement())
+  cartId    Int     @map("cart_id")
+  productId Int     @map("product_id")
+  qty       Int
+  cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([cartId, productId])
+  @@map("cart_items")
+}
+
+model Order {
+  id               Int           @id @default(autoincrement())
+  orderNumber      String        @unique @map("order_number")
+  publicTokenHash  String        @unique @map("public_token_hash")
+  // Encrypted copy of the status-page token, kept only so emails can link to
+  // the status page. Removed together with the other personal data on purge.
+  publicTokenEnc   String?       @map("public_token_enc")
+  status           OrderStatus   @default(pending_payment)
+  subtotalCents    Int           @map("subtotal_cents")
+  discountCents    Int           @map("discount_cents")
+  shippingCents    Int           @map("shipping_cents")
+  totalCents       Int           @map("total_cents")
+  discountCodeId   Int?          @map("discount_code_id")
+  emailEnc         String?       @map("email_enc")
+  nameEnc          String?       @map("name_enc")
+  addressLine1Enc  String?       @map("address_line1_enc")
+  addressLine2Enc  String?       @map("address_line2_enc")
+  cityEnc          String?       @map("city_enc")
+  regionEnc        String?       @map("region_enc")
+  postcodeEnc      String?       @map("postcode_enc")
+  countryEnc       String?       @map("country_enc")
+  piiPurgedAt      DateTime?     @map("pii_purged_at")
+  trackingNumber   String?       @map("tracking_number")
+  paymentProvider  String        @map("payment_provider")
+  invoiceId        String?       @unique @map("invoice_id")
+  needsReview      Boolean       @default(false) @map("needs_review")
+  paidAt           DateTime?     @map("paid_at")
+  shippedAt        DateTime?     @map("shipped_at")
+  closedAt         DateTime?     @map("closed_at")
+  createdAt        DateTime      @default(now()) @map("created_at")
+  updatedAt        DateTime      @updatedAt @map("updated_at")
+  items            OrderItem[]
+  reservations     StockReservation[]
+  discountCode     DiscountCode? @relation(fields: [discountCodeId], references: [id], onDelete: SetNull)
+
+  @@index([status, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                  Int      @id @default(autoincrement())
+  orderId             Int      @map("order_id")
+  productId           Int?     @map("product_id")
+  productNameSnapshot String   @map("product_name_snapshot")
+  unitPriceCents      Int      @map("unit_price_cents")
+  qty                 Int
+  order               Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product             Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model StockReservation {
+  id         Int       @id @default(autoincrement())
+  orderId    Int       @map("order_id")
+  productId  Int       @map("product_id")
+  qty        Int
+  expiresAt  DateTime  @map("expires_at")
+  releasedAt DateTime? @map("released_at")
+  consumedAt DateTime? @map("consumed_at")
+  order      Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product    Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
   @@map("stock_reservations")
 }
 
@@ -177,60 +238,101 @@ model WebhookEvent {
   @@map("webhook_events")
 }
 
+// Stand-in for BTCPay invoices while the store runs in demo payment mode.
+model MockInvoice {
+  id          String   @id
+  orderId     Int      @map("order_id")
+  amountCents Int      @map("amount_cents")
+  status      String   @default("New")
+  redirectUrl String   @map("redirect_url")
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("mock_invoices")
+}
+
 model Setting {
   key       String   @id
   value     String
-  updatedBy String?  @map("updated_by")
+  updatedBy Int?     @map("updated_by")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("settings")
 }
 
-model Session {
-  idHash      String   @id @map("id_hash")
-  subjectType String   @map("subject_type")
-  subjectId   Int      @map("subject_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-  lastSeenAt  DateTime @default(now()) @map("last_seen_at")
-  expiresAt   DateTime @map("expires_at")
-
-  @@map("sessions")
-}
-
-model PasswordResetToken {
-  tokenHash  String   @id @map("token_hash")
-  subjectType String   @map("subject_type")
-  subjectId   Int      @map("subject_id")
-  expiresAt   DateTime @map("expires_at")
-  usedAt     DateTime? @map("used_at")
-
-  @@map("password_reset_tokens")
-}
-
 model AdminUser {
-  id                 Int      @id @default(autoincrement())
-  email              String   @unique
-  passwordHash       String   @map("password_hash")
-  role               String
-  totpSecretEnc      String?  @map("totp_secret_enc")
-  recoveryCodesHash  String[] @map("recovery_codes_hash")
-  isActive           Boolean  @default(true) @map("is_active")
+  id                 Int       @id @default(autoincrement())
+  email              String    @unique
+  passwordHash       String    @map("password_hash")
+  role               AdminRole
+  totpSecretEnc      String?   @map("totp_secret_enc")
+  totpEnabledAt      DateTime? @map("totp_enabled_at")
+  // Last accepted TOTP time-step, so a code cannot be replayed.
+  totpLastCounter    Int?      @map("totp_last_counter")
+  recoveryCodeHashes String[]  @map("recovery_code_hashes")
+  // Freshly generated recovery codes, encrypted, kept only until shown once.
+  pendingRecoveryEnc String?   @map("pending_recovery_enc")
+  failedLoginCount   Int       @default(0) @map("failed_login_count")
+  lockedUntil        DateTime? @map("locked_until")
+  isActive           Boolean   @default(true) @map("is_active")
   lastLoginAt        DateTime? @map("last_login_at")
-  createdAt          DateTime @default(now()) @map("created_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
 
   @@map("admin_users")
 }
 
+model Session {
+  idHash      String      @id @map("id_hash")
+  subjectType SubjectType @map("subject_type")
+  subjectId   Int         @map("subject_id")
+  mfaPassed   Boolean     @default(false) @map("mfa_passed")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  lastSeenAt  DateTime    @default(now()) @map("last_seen_at")
+  expiresAt   DateTime    @map("expires_at")
+
+  @@index([subjectType, subjectId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
 model AuditLog {
   id         Int      @id @default(autoincrement())
-  actorType  String?  @map("actor_type")
+  actorType  String   @map("actor_type")
   actorId    Int?     @map("actor_id")
   action     String
   targetType String?  @map("target_type")
-  targetId   Int?     @map("target_id")
-  metadataJson String? @map("metadata_json")
+  targetId   String?  @map("target_id")
+  // Never contains customer personal data - reference IDs and counts only.
+  metadata   Json?
   ipHash     String?  @map("ip_hash")
   createdAt  DateTime @default(now()) @map("created_at")
 
+  @@index([createdAt])
   @@map("audit_logs")
+}
+
+model EmailOutbox {
+  id          Int         @id @default(autoincrement())
+  template    String
+  toEnc       String      @map("to_enc")
+  subjectEnc  String      @map("subject_enc")
+  bodyTextEnc String      @map("body_text_enc")
+  bodyHtmlEnc String      @map("body_html_enc")
+  status      EmailStatus @default(QUEUED)
+  attempts    Int         @default(0)
+  lastError   String?     @map("last_error")
+  orderId     Int?        @map("order_id")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  sentAt      DateTime?   @map("sent_at")
+
+  @@index([status, createdAt])
+  @@map("email_outbox")
+}
+
+model RateLimit {
+  key     String   @id
+  count   Int
+  resetAt DateTime @map("reset_at")
+
+  @@map("rate_limits")
 }
